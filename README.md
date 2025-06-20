@@ -1,4 +1,4 @@
-# VisionGaurdian
+# VisionGuardian
 1>step-
 pip install opencv-python ultralytics pyttsx3
 2>step-

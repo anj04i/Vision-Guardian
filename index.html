@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Real-Time Object Detection with Speech</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.23.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <style>
+    video, canvas { position: absolute; left: 0; top: 0; }
+    #info { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.7); color: #fff; padding: 8px; }
+  </style>
+</head>
+<body>
+  <div id="info">Loading model...</div>
+  <video id="webcam" autoplay playsinline width="640" height="480" style="transform: scaleX(-1);"></video>
+  <canvas id="overlay" width="640" height="480"></canvas>
+  <script>
+    let lastSpoken = '';
+    let lastTime = 0;
+
+    async function setup() {
+      const webcam = document.getElementById('webcam');
+      const overlay = document.getElementById('overlay');
+      const ctx = overlay.getContext('2d');
+      const info = document.getElementById('info');
+      const model = await cocoSsd.load();
+      info.textContent = 'Model loaded. Starting camera...';
+
+      // Start webcam
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      webcam.srcObject = stream;
+
+      webcam.onloadedmetadata = () => {
+        info.textContent = 'Detecting...';
+        detectFrame();
+      };
+
+      async function detectFrame() {
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+        const predictions = await model.detect(webcam);
+        let labels = new Set();
+        predictions.forEach(pred => {
+          if (pred.score > 0.5) {
+            labels.add(pred.class);
+            // Draw box
+            ctx.strokeStyle = '#00FF00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(pred.bbox[0], pred.bbox[1], pred.bbox[2], pred.bbox[3]);
+            ctx.fillStyle = '#00FF00';
+            ctx.fillText(pred.class, pred.bbox[0], pred.bbox[1] > 10 ? pred.bbox[1] - 5 : 10);
+          }
+        });
+
+        // Speech every 2 seconds or if objects change
+        if (labels.size > 0) {
+          const description = "I see " + Array.from(labels).join(", ");
+          if (description !== lastSpoken || (Date.now() - lastTime) > 2000) {
+            const utter = new SpeechSynthesisUtterance(description);
+            speechSynthesis.speak(utter);
+            lastSpoken = description;
+            lastTime = Date.now();
+          }
+        }
+        requestAnimationFrame(detectFrame);
+      }
+    }
+    setup();
+  </script>
+</body>
+</html>

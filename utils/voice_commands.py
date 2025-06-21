@@ -1,5 +1,9 @@
 import speech_recognition as sr
 import pyttsx3
+import threading
+
+# Global stop event to signal shutdown
+stop_event = threading.Event()
 
 # === Init TTS engine ===
 engine = pyttsx3.init()
@@ -7,16 +11,22 @@ engine.setProperty("rate", 150)
 
 def speak(text):
     print(f"🔈 {text}")
-    engine.say(text)
-    engine.runAndWait()
+    try:
+        engine.say(text)
+        engine.runAndWait()
+    except Exception as e:
+        print(f"❌ TTS error: {e}")
 
 def listen_command():
     recognizer = sr.Recognizer()
     with sr.Microphone() as source:
         print("🎤 Listening for command...")
         recognizer.adjust_for_ambient_noise(source)
-        audio = recognizer.listen(source)
-
+        try:
+            audio = recognizer.listen(source, timeout=5)
+        except sr.WaitTimeoutError:
+            print("⌛ Listening timed out.")
+            return ""
     try:
         command = recognizer.recognize_google(audio)
         print("✅ You said:", command)
@@ -35,12 +45,12 @@ def handle_command(command):
         speak("Hello! How can I help you?")
     elif "stop detection" in command or "exit" in command:
         speak("Goodbye! Exiting now.")
-        exit()
+        stop_event.set()
     else:
         speak("Sorry, I didn't understand that command.")
 
 def voice_command_loop():
-    while True:
+    while not stop_event.is_set():
         command = listen_command()
         if command:
             handle_command(command)

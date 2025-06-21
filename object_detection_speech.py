@@ -3,9 +3,12 @@ import time
 import json
 import pyttsx3
 import threading
-import speech_recognition as sr
 from ultralytics import YOLO
-from utils.voice_commands import voice_command_loop  # ✅ voice command logic from utils
+from utils.voice_commands import voice_command_loop, stop_event
+from SceneryDetector import SceneryDetector  # 🆕 Import scene detector
+
+# === CONFIGURATION ===
+SPEAK_ALL_OBJECTS = True  # Set to False if you only want to announce dangerous objects
 
 # === Init TTS ===
 tts = pyttsx3.init()
@@ -24,19 +27,30 @@ face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fronta
 # === Start Voice Command in Background ===
 threading.Thread(target=voice_command_loop, daemon=True).start()
 
+# === Init Scene Detector ===
+scenery_detector = SceneryDetector()
+frame_count = 0
+last_scene = None
+last_scene_time = 0
+
 # === Open Webcam ===
 cap = cv2.VideoCapture(0)
-last_spoken = ""
 last_time = 0
 spoken_labels = set()
 last_clear_time = time.time()
 
 try:
     while True:
-        ret, frame = cap.read()
-        if not ret:
+        if stop_event.is_set():
+            print("🛑 Stop event received. Exiting detection loop.")
             break
 
+        ret, frame = cap.read()
+        if not ret:
+            print("❌ Could not read from camera.")
+            break
+
+        detected_labels = set()
         current_dangers = set()
 
         # === YOLO Object Detection ===
@@ -47,6 +61,7 @@ try:
             for box in result.boxes:
                 cls_id = int(box.cls[0])
                 label = names[cls_id].lower()
+                detected_labels.add(label)
 
                 # Draw bounding box
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -62,11 +77,25 @@ try:
         for danger in current_dangers:
             if (danger not in spoken_labels) or (time.time() - last_time > 5):
                 alert = danger_objects[danger]
-                tts.say(alert)
-                tts.runAndWait()
-                last_spoken = alert
+                try:
+                    tts.say(alert)
+                    tts.runAndWait()
+                except Exception as e:
+                    print(f"❌ TTS error: {e}")
                 last_time = time.time()
                 spoken_labels.add(danger)
+
+        # === Speak Detected Objects (if enabled) ===
+        if SPEAK_ALL_OBJECTS:
+            for label in detected_labels:
+                if (label not in spoken_labels) and (label not in danger_objects):
+                    try:
+                        tts.say(f"{label} detected.")
+                        tts.runAndWait()
+                    except Exception as e:
+                        print(f"❌ TTS error: {e}")
+                    spoken_labels.add(label)
+                    last_time = time.time()
 
         # === Face Detection (Haar Cascade) ===
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -76,10 +105,28 @@ try:
             for (x, y, w, h) in faces:
                 cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
             if "face" not in spoken_labels:
-                tts.say("Face detected nearby.")
-                tts.runAndWait()
+                try:
+                    tts.say("Face detected nearby.")
+                    tts.runAndWait()
+                except Exception as e:
+                    print(f"❌ TTS error: {e}")
                 spoken_labels.add("face")
                 last_time = time.time()
+
+        # === Scenery Detection Every 60 Frames ===
+        if frame_count % 60 == 0:
+            try:
+                scene, confidence = scenery_detector.predict_scene(frame)
+                if scene != last_scene or time.time() - last_scene_time > 10:
+                    print(f"🏞️ Scene Detected: {scene} ({confidence:.2f})")
+                    tts.say(f"You are probably in a {scene}")
+                    tts.runAndWait()
+                    last_scene = scene
+                    last_scene_time = time.time()
+            except Exception as e:
+                print(f"❌ Scene detection error: {e}")
+
+        frame_count += 1
 
         # === Clear spoken labels every 30 seconds ===
         if time.time() - last_clear_time > 30:
@@ -89,13 +136,12 @@ try:
         # === Show Feed ===
         cv2.imshow("Vision Guardian", frame)
         if cv2.waitKey(1) & 0xFF == 27:  # ESC to quit
+            print("👋 ESC pressed. Exiting.")
             break
 
 finally:
     cap.release()
     cv2.destroyAllWindows()
-
-
 
 
 

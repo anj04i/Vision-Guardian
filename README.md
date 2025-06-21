@@ -7,3 +7,11 @@ python object_detection_speech.py
 --python file run krke detect krra h aur speech m b dera hai, index se badme layout bnaynge presentation ke lie kyuki prototype chahie .
 isse better krna h, run kro apne local pr aur better krke agar working ho code to commit krdena yaha pr.
 
+your_project_folder/
+├── app.py
+├── templates/
+│   └── index.html
+
+pip install -r requirements.txt
+python app.py
+ 
